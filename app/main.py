@@ -123,11 +123,40 @@ def run_delivery_test(user_id: str) -> None:
         line_client.push(f"配信テスト失敗: {e}", [user_id])
 
 
+def _current_edition() -> str:
+    """現在の JST 時刻から最も近い配信回を選ぶ(いまの状況コマンド用)。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    hour = datetime.now(ZoneInfo("Asia/Tokyo")).hour
+    if 5 <= hour < 11:
+        return "morning"
+    if 11 <= hour < 16:
+        return "noon"
+    return "evening"
+
+
+def run_now(user_id: str) -> None:
+    """いまの状況(時刻に応じた最新ダイジェスト)を即時に作成して push する。"""
+    try:
+        msg = run_delivery(_current_edition(), push=False)
+        line_client.push(msg, [user_id])
+    except Exception as e:  # noqa: BLE001
+        logger.exception("いまの状況の取得に失敗")
+        line_client.push(f"いまの状況の取得に失敗: {e}", [user_id])
+
+
 # 重いコマンド(Gemini呼び出し等)→背景実行してpush。キーは正規化後の文字列。
+_IMPACT_ACK = "📈 保有銘柄への影響を考察中です…少々お待ちください(30秒ほど)。"
+_NOW_ACK = "🔎 いまの市況・ニュースを取得中です…少々お待ちください(30秒ほど)。"
 _HEAVY_COMMANDS = {
     "配信テスト": (run_delivery_test, "📰 朝刊プレビューを作成中です…少々お待ちください。"),
-    "保有影響": (run_portfolio_impact, "📈 保有銘柄への影響を考察中です…少々お待ちください(30秒ほど)。"),
-    "保有銘柄への影響": (run_portfolio_impact, "📈 保有銘柄への影響を考察中です…少々お待ちください(30秒ほど)。"),
+    "保有影響": (run_portfolio_impact, _IMPACT_ACK),
+    "保有銘柄への影響": (run_portfolio_impact, _IMPACT_ACK),
+    "いま": (run_now, _NOW_ACK),
+    "今": (run_now, _NOW_ACK),
+    "いまの市況": (run_now, _NOW_ACK),
+    "状況": (run_now, _NOW_ACK),
 }
 
 

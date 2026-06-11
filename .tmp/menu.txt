@@ -1,3 +1,1 @@
-image saved (2500, 1686)
-create 200
-done rid richmenu-9b4d98cbfaa79f20d49f11cf3beeb4d5
+menu ok richmenu-8b3d68e2e2690a5b51b82072f9759348

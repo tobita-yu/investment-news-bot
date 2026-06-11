@@ -71,6 +71,68 @@ def _holdings_feeds(holdings: list[dict]) -> list[tuple[str, str]]:
     return feeds
 
 
+# 適時開示(TDnet)は決算など材料性が高く数日経っても重要なので長めの窓
+TDNET_MAX_AGE_DAYS = 14
+
+
+def fetch_tdnet(holdings: list[dict], max_age_days: int = TDNET_MAX_AGE_DAYS) -> list[dict]:
+    """保有銘柄の適時開示(TDnet)を yanoshin API から取得する。一次情報。
+
+    決算短信・自己株式・配当・業績修正など公式開示を銘柄ごとに取得する。
+    """
+    import httpx
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+    out: list[dict] = []
+    with httpx.Client(timeout=20) as client:
+        for h in holdings:
+            code = h.get("code", "")
+            if not code:
+                continue
+            try:
+                r = client.get(
+                    f"https://webapi.yanoshin.jp/webapi/tdnet/list/{code}.json",
+                    params={"limit": 8},
+                )
+                items = r.json().get("items", [])
+            except Exception:
+                logger.warning("TDnet 取得失敗 %s", code)
+                continue
+            for it in items:
+                t = it.get("Tdnet", {})
+                title = (t.get("title") or "").strip()
+                if not title:
+                    continue
+                published = _parse_tdnet_date(t.get("pubdate"))
+                if published is not None and published < cutoff:
+                    continue
+                out.append(
+                    {
+                        "label": f"適時開示:{h['name']}",
+                        "title": f"【適時開示】{h['name']}: {title}",
+                        "summary": "",
+                        "link": t.get("document_url", "") or t.get("url", ""),
+                        "published": published,
+                    }
+                )
+    return out
+
+
+def _parse_tdnet_date(s: str | None) -> datetime | None:
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            # TDnet は JST。UTC に寄せて比較に使う
+            from datetime import timezone as _tz, timedelta as _td
+
+            dt = datetime.strptime(s[: len(fmt) + 2], fmt)
+            return dt.replace(tzinfo=_tz(_td(hours=9))).astimezone(timezone.utc)
+        except Exception:
+            continue
+    return None
+
+
 def _parse_published(entry) -> datetime | None:
     t = getattr(entry, "published_parsed", None) or getattr(
         entry, "updated_parsed", None
@@ -128,6 +190,14 @@ def fetch_news(holdings: list[dict] | None = None, max_age_days: int = MAX_AGE_D
                     "published": published,
                 }
             )
+
+    # 適時開示(TDnet)を追記。一次情報なので重複排除のうえ末尾に足す。
+    for item in fetch_tdnet(holdings):
+        norm = _normalize(item["title"])
+        if norm in seen_titles:
+            continue
+        seen_titles.add(norm)
+        out.append(item)
     return out
 
 

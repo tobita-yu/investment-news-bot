@@ -55,13 +55,14 @@ def _fmt_value(ticker: str, value: float) -> str:
 
 
 def _fmt_change(pct: float | None) -> str:
+    # 色付き記号で騰落を一目で分かるようにする(緑=上昇 / 赤=下落)
     if pct is None:
         return ""
     if pct > 0:
-        return f" ▲{pct:.2f}%"
+        return f" 🟢+{pct:.2f}%"
     if pct < 0:
-        return f" ▼{abs(pct):.2f}%"
-    return " →0.00%"
+        return f" 🔴{pct:.2f}%"  # pct は負なので符号付きで表示
+    return " ⚪0.00%"
 
 
 def _fmt_ticker(ticker: str, market: dict[str, dict]) -> str | None:

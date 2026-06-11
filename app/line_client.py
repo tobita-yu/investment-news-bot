@@ -81,16 +81,45 @@ def verify_signature(body: bytes, signature: str) -> bool:
 # ---------------------------------------------------------------------------
 # 保有銘柄コマンド処理
 # ---------------------------------------------------------------------------
+HELP_TEXT = (
+    "📖 使い方\n"
+    "下のメニューのボタン、または以下を送信:\n\n"
+    "📋 保有一覧 … 登録銘柄を表示\n"
+    "📰 配信テスト … 今すぐ朝刊プレビュー\n"
+    "📅 指標 … 直近の経済指標予定\n"
+    "➕ 保有追加 <コード> <銘柄名> [キーワード...]\n"
+    "　例: 保有追加 7203 トヨタ 自動車\n"
+    "➖ 保有削除 <コード>\n"
+    "　例: 保有削除 7203"
+)
+
+
 def handle_command(text: str) -> str | None:
     """テキストコマンドを処理して返信文字列を返す。対象外なら None。
 
-    対応: 保有追加 / 保有削除 / 保有一覧 / 配信テスト(配信テストは main 側で処理)
+    対応: 保有追加 / 保有削除 / 保有一覧 / ヘルプ / 指標(配信テストは main 側で処理)
     """
     text = text.strip()
     parts = text.split()
     if not parts:
         return None
     cmd = parts[0]
+
+    if cmd in ("ヘルプ", "へるぷ", "help", "メニュー", "使い方"):
+        return HELP_TEXT
+
+    if cmd in ("指標", "カレンダー", "予定"):
+        from app import calendar_loader
+
+        events = calendar_loader.upcoming_events(days=45)
+        if not events:
+            return "📅 今後45日の登録イベントはありません。"
+        lines = []
+        for e in events:
+            d = e["_date"]
+            star = "⭐" * int(e.get("importance", 0))
+            lines.append(f"{d.month}/{d.day} {e['name']} {star}")
+        return "📅 直近の経済指標予定\n" + "\n".join(lines)
 
     if cmd == "保有一覧":
         holdings = db.list_holdings()

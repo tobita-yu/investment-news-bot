@@ -12,7 +12,7 @@ investment-news-bot/
 ├── app/
 │   ├── main.py            # FastAPI: /deliver/{edition} と /webhook(LINE)
 │   ├── config.py          # 環境変数(pydantic-settings)
-│   ├── market_data.py     # yfinance 取得・整形
+│   ├── market_data.py     # Yahoo chart API を curl_cffi で取得・整形
 │   ├── news_fetcher.py    # RSS 取得・重複排除
 │   ├── calendar_loader.py # economic_calendar.json 読み込み
 │   ├── scorer.py          # Gemini スコアリング+要約
@@ -161,7 +161,7 @@ Google AI Studio で API キーを発行(既存のものを流用可)→ `GEMINI
 | `/deliver` が 403 | `X-Trigger-Token` ヘッダーと `TRIGGER_TOKEN` 環境変数の一致を確認 |
 | LINE が届かない | `LINE_CHANNEL_ACCESS_TOKEN` / `LINE_USER_ID` を確認。失敗時は自分宛てにエラー通知が飛ぶ |
 | Webhook が 403 | LINE Developers の Channel secret と `LINE_CHANNEL_SECRET` の一致を確認 |
-| 市況が「取得失敗」 | yfinance の一時的な失敗。リトライ3回後も失敗した項目のみ表示。配信は止まらない |
+| 市況が「取得失敗」 | Yahoo の一時的失敗/レート制限。curl_cffi のChrome偽装で回避済み。リトライ3回後も失敗した項目のみ表示し配信は止まらない |
 | ヘッドラインが見出しのみ | Gemini の JSON 失敗時フォールバック(新しい順5件)。API キー/レート制限を確認 |
 | Render コールドスタート | GitHub Actions が `/health` で起こし、30秒待ってから配信する |
 
@@ -169,6 +169,6 @@ Google AI Studio で API キーを発行(既存のものを流用可)→ `GEMINI
 
 - LINE 無料プランは月200通。1人配信で約90通/月。**2人配信は約180通/月で月末枠切れリスクあり**(増やす場合は要確認)。
 - Gemini 無料枠の RPM/RPD に配慮し、1配信あたり API 呼び出しは1回(全記事一括)に抑える設計。
-- yfinance は非公式ライブラリのため、取得失敗してもクラッシュせず部分配信する。
+- 市況は Yahoo Finance chart API を curl_cffi(Chrome偽装)で取得。Yahoo はデータセンターIP/TLS指紋で429ブロックするため impersonate が必須。取得失敗してもクラッシュせず部分配信する。
 - 祝日・休場日のスキップ判定は初版では入れていない(v2 で jpholiday 導入を検討)。
 - X(Twitter)のデータ取得は行わない。将来 RSS を追加する場合は `news_fetcher.RSS_FEEDS` に1行追加するだけでよい。

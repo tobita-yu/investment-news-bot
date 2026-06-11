@@ -87,19 +87,45 @@ def _extract_json(text: str) -> dict:
     return json.loads(text)
 
 
+def _retry_delay_sec(err: Exception) -> float:
+    """429 エラーから推奨待機秒を抽出。取れなければ既定35秒(無料枠の毎分窓を跨ぐ)。"""
+    import re as _re
+
+    sec = getattr(getattr(err, "retry_delay", None), "seconds", None)
+    if sec:
+        return min(float(sec) + 2, 60)
+    m = _re.search(r"retry in (\d+(?:\.\d+)?)", str(err))
+    if m:
+        return min(float(m.group(1)) + 2, 60)
+    return 35.0
+
+
 def _call_gemini(system: str, user: str) -> str:
+    import time
+
     import google.generativeai as genai
+    from google.api_core import exceptions as gexc
 
     s = get_settings()
     if not s.gemini_api_key:
         raise RuntimeError("GEMINI_API_KEY が未設定です")
     genai.configure(api_key=s.gemini_api_key)
     model = genai.GenerativeModel(MODEL_NAME, system_instruction=system)
-    resp = model.generate_content(
-        user,
-        generation_config={"response_mime_type": "application/json"},
-    )
-    return resp.text
+    # 無料枠は約5リクエスト/分。429(レート制限)時は推奨秒だけ待って1回再試行する。
+    for attempt in range(2):
+        try:
+            resp = model.generate_content(
+                user,
+                generation_config={"response_mime_type": "application/json"},
+            )
+            return resp.text
+        except gexc.ResourceExhausted as e:
+            if attempt == 0:
+                wait = _retry_delay_sec(e)
+                logger.warning("Gemini 429。%.0f秒待って再試行", wait)
+                time.sleep(wait)
+                continue
+            raise
 
 
 def _has_japanese(text: str) -> bool:

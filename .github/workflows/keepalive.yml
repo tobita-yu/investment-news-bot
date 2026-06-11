@@ -1,0 +1,14 @@
+name: keepalive
+# Render 無料枠は15分アイドルでスリープし、その間 LINE Webhook(コマンド/ボタン)が
+# コールドスタートに間に合わず取りこぼす。10分ごとに /health を叩いて常時起こしておく。
+# (Render 無料枠は750時間/月 = 1サービス常時稼働でも枠内)
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: curl -s --max-time 120 ${{ secrets.APP_URL }}/health || true

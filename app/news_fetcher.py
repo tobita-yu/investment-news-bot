@@ -12,7 +12,17 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 # 固定フィード (ラベル, URL)
-RSS_FEEDS: list[tuple[str, str]] = [
+# --- 一次情報(中央銀行・公的統計の公式発表。プロが起点に見る発表元) ---
+PRIMARY_FEEDS: list[tuple[str, str]] = [
+    ("日銀公式", "https://www.boj.or.jp/rss/whatsnew.xml"),
+    ("FRB公式", "https://www.federalreserve.gov/feeds/press_monetary.xml"),
+    ("ECB公式", "https://www.ecb.europa.eu/rss/press.html"),
+    ("BEA(米統計)", "https://apps.bea.gov/rss/rss.xml"),
+    ("後藤達也", "https://note.com/goto_finance/rss"),
+    ("日経マーケット", "https://assets.wor.jp/rss/rdf/nikkei/markets.rdf"),
+]
+
+RSS_FEEDS: list[tuple[str, str]] = PRIMARY_FEEDS + [
     ("NHK経済", "https://www.nhk.or.jp/rss/news/cat5.xml"),
     (
         "日銀",

@@ -84,18 +84,19 @@ def filter_unseen(items: list[dict]) -> list[dict]:
     """まだ配信していない記事だけを返す。title_hash で判定する。
 
     items は {"title": ..., ...} を含む dict のリスト。
+    記事数が多いと in.(...) クエリの URL が長すぎて PostgREST に弾かれるため、
+    ハッシュをチャンクに分けて問い合わせる。
     """
     if not items:
         return []
     hashes = {title_hash(i["title"]): i for i in items}
-    res = (
-        get_client()
-        .table("news_cache")
-        .select("title_hash")
-        .in_("title_hash", list(hashes.keys()))
-        .execute()
-    )
-    seen = {row["title_hash"] for row in (res.data or [])}
+    all_hashes = list(hashes.keys())
+    seen: set[str] = set()
+    client = get_client()
+    for i in range(0, len(all_hashes), 50):
+        chunk = all_hashes[i : i + 50]
+        res = client.table("news_cache").select("title_hash").in_("title_hash", chunk).execute()
+        seen.update(row["title_hash"] for row in (res.data or []))
     return [item for h, item in hashes.items() if h not in seen]
 
 
@@ -104,12 +105,16 @@ def mark_delivered(items: list[dict]) -> None:
     if not items:
         return
     rows = [{"title_hash": title_hash(i["title"]), "title": i["title"]} for i in items]
-    try:
-        get_client().table("news_cache").upsert(
-            rows, on_conflict="title_hash"
-        ).execute()
-    except Exception:
-        logger.exception("news_cache への記録に失敗")
+    # 重複(同一ハッシュ)を除いてからチャンク投入
+    uniq = list({r["title_hash"]: r for r in rows}.values())
+    client = get_client()
+    for i in range(0, len(uniq), 100):
+        try:
+            client.table("news_cache").upsert(
+                uniq[i : i + 100], on_conflict="title_hash"
+            ).execute()
+        except Exception:
+            logger.exception("news_cache への記録に失敗")
 
 
 def prune_old_cache(days: int = 7) -> None:

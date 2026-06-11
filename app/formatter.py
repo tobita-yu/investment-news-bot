@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 JST = ZoneInfo("Asia/Tokyo")
 MAX_LEN = 4500
+MAX_HEADLINES = 8  # 説明+リンク付きなので読みやすさのため上位件数を制限
 
 # 配信回ごとのメタ情報
 EDITIONS = {
@@ -96,12 +97,23 @@ def _schedule_section(todays: list[dict], next_ev: dict | None) -> str:
     return "・特になし"
 
 
+def _headline_block(h: dict) -> str:
+    """1見出しを「絵文字+見出し / 説明 / 取得元+リンク」の複数行で組み立てる。"""
+    emoji = SCORE_EMOJI.get(h.get("score", 3), "🟡")
+    lines = [f"{emoji} {h.get('summary', '').strip()}"]
+    detail = (h.get("detail") or "").strip()
+    if detail:
+        lines.append(f"　{detail}")
+    link = (h.get("link") or "").strip()
+    if link:
+        src = (h.get("source_label") or "").strip()
+        prefix = f"🔗 {src}: " if src else "🔗 "
+        lines.append(f"　{prefix}{link}")
+    return "\n".join(lines)
+
+
 def _headline_lines(headlines: list[dict]) -> list[str]:
-    lines = []
-    for h in headlines:
-        emoji = SCORE_EMOJI.get(h.get("score", 3), "🟡")
-        lines.append(f"{emoji} {h.get('summary', '').strip()}")
-    return lines
+    return [_headline_block(h) for h in headlines]
 
 
 def _assemble(header: str, sections: list[tuple[str, str]]) -> str:
@@ -131,7 +143,8 @@ def format_message(
     portfolio_body = "\n".join(f"・{p}" for p in portfolio) if portfolio else "・該当なし"
     ai_comment = (scored.get("ai_comment") or "").strip()
 
-    headlines = list(scored.get("headlines") or [])
+    # 説明+リンク付きで1件が複数行になるため、読みやすさ優先で上位件数を絞る
+    headlines = list(scored.get("headlines") or [])[:MAX_HEADLINES]
 
     def build(hls: list[dict]) -> str:
         head_body = "\n".join(_headline_lines(hls)) if hls else "・重要ニュースなし"
@@ -170,10 +183,18 @@ def _sample() -> str:
     }
     scored = {
         "headlines": [
-            {"score": 5, "summary": "トランプ氏、イラン発電所攻撃を示唆", "category": "地政学"},
-            {"score": 5, "summary": "米5月CPI +4.2%、3年ぶり高水準", "category": "経済指標"},
-            {"score": 4, "summary": "日銀6月利上げ観測9割に", "category": "金融政策"},
-            {"score": 3, "summary": "銅価格続落、3カ月安値", "category": "商品市況"},
+            {"score": 5, "summary": "米5月CPI +4.2%、3年ぶり高水準",
+             "detail": "コア指数も上振れ、利上げ観測が市場で急速に強まる",
+             "source_label": "FRB公式", "link": "https://www.federalreserve.gov/...", "category": "経済指標"},
+            {"score": 5, "summary": "トランプ氏、イラン発電所攻撃を示唆",
+             "detail": "中東情勢の緊迫でホルムズ海峡の供給懸念が再燃",
+             "source_label": "後藤達也", "link": "https://note.com/goto_finance/...", "category": "地政学"},
+            {"score": 4, "summary": "日銀6月利上げ観測9割に",
+             "detail": "OISが0.25%利上げをほぼ織り込み、円金利が上昇",
+             "source_label": "日銀公式", "link": "https://www.boj.or.jp/...", "category": "金融政策"},
+            {"score": 3, "summary": "銅価格続落、3カ月安値",
+             "detail": "中国需要鈍化観測で非鉄全般が軟調",
+             "source_label": "日経マーケット", "link": "https://www.nikkei.com/...", "category": "商品市況"},
         ],
         "portfolio_notes": [
             "JX金属: 銅安が逆風、本日決算なし",

@@ -1,0 +1,18 @@
+[
+  {"date": "2026-06-15", "name": "日銀金融政策決定会合(1日目)", "importance": 5},
+  {"date": "2026-06-16", "name": "日銀金融政策決定会合(結果発表・植田総裁会見15:30)", "importance": 5},
+  {"date": "2026-06-17", "name": "FOMC(結果は日本時間6/18 3:00)", "importance": 5},
+  {"date": "2026-07-14", "name": "米CPI(6月分)※日付要確認", "importance": 4},
+  {"date": "2026-07-28", "name": "FOMC(1日目)", "importance": 4},
+  {"date": "2026-07-29", "name": "FOMC(2日目)", "importance": 4},
+  {"date": "2026-07-30", "name": "日銀金融政策決定会合(1日目)", "importance": 4},
+  {"date": "2026-07-31", "name": "日銀金融政策決定会合(結果発表)", "importance": 5},
+  {"date": "2026-09-15", "name": "FOMC(1日目・ドットチャート公表回)", "importance": 5},
+  {"date": "2026-09-16", "name": "FOMC(2日目)", "importance": 5},
+  {"date": "2026-09-17", "name": "日銀金融政策決定会合(1日目)", "importance": 4},
+  {"date": "2026-09-18", "name": "日銀金融政策決定会合(結果発表)", "importance": 5},
+  {"date": "2026-10-29", "name": "日銀金融政策決定会合(1日目)", "importance": 4},
+  {"date": "2026-10-30", "name": "日銀金融政策決定会合(結果発表)", "importance": 4},
+  {"date": "2026-12-17", "name": "日銀金融政策決定会合(1日目)", "importance": 4},
+  {"date": "2026-12-18", "name": "日銀金融政策決定会合(結果発表)", "importance": 4}
+]

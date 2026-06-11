@@ -1,0 +1,28 @@
+name: deliver
+on:
+  schedule:
+    # JST 8:30 / 12:00 / 20:00 = UTC 23:30(前日) / 3:00 / 11:00
+    - cron: '30 23 * * *'
+    - cron: '0 3 * * *'
+    - cron: '0 11 * * *'
+  workflow_dispatch: # 手動実行用
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine edition
+        id: ed
+        run: |
+          HOUR=$(date -u +%H)
+          if [ "$HOUR" = "23" ]; then echo "edition=morning" >> $GITHUB_OUTPUT
+          elif [ "$HOUR" = "03" ]; then echo "edition=noon" >> $GITHUB_OUTPUT
+          else echo "edition=evening" >> $GITHUB_OUTPUT; fi
+      - name: Wake up Render (cold start)
+        run: curl -s --max-time 120 ${{ secrets.APP_URL }}/health || true
+      - name: Wait for warm up
+        run: sleep 30
+      - name: Trigger delivery
+        run: |
+          curl -s --max-time 300 -X POST \
+            -H "X-Trigger-Token: ${{ secrets.TRIGGER_TOKEN }}" \
+            ${{ secrets.APP_URL }}/deliver/${{ steps.ed.outputs.edition }}

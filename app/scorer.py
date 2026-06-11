@@ -105,6 +105,64 @@ def _has_japanese(text: str) -> bool:
     return any("぀" <= ch <= "ヿ" or "一" <= ch <= "鿿" for ch in text)
 
 
+# ---------------------------------------------------------------------------
+# 保有銘柄への影響考察(オンデマンド)
+# ---------------------------------------------------------------------------
+IMPACT_SYSTEM = """あなたは機関投資家向けの株式アナリストです。
+渡された保有銘柄・市況・関連ニュースをもとに、保有ポートフォリオへの影響を
+「短期(数日〜数週間)」「中期(数ヶ月)」「長期(1年以上)」の3つの時間軸で合理的に考察します。
+
+ルール:
+- 必ず日本語。投機的な断定は避け、根拠(金利・為替・商品市況・金融政策・個別材料など)を明示する。
+- 各コメントは40〜70字程度の1〜2文。具体的に書く。
+- stocks には、市況やニュースから影響が読み取れる銘柄を最大6件。材料が薄い銘柄は省いてよい。
+- 必ず JSON のみを返す(前後に説明やコードブロック記号を付けない)。
+
+出力スキーマ:
+{
+  "overall": {"short": "短期の全体観", "mid": "中期の全体観", "long": "長期の全体観"},
+  "stocks": [
+    {"name": "銘柄名", "short": "短期影響", "mid": "中期影響", "long": "長期影響"}
+  ]
+}"""
+
+
+def analyze_portfolio_impact(
+    holdings: list[dict], market: dict[str, dict], articles: list[dict]
+) -> dict | None:
+    """保有銘柄への影響を短期/中期/長期で考察する。失敗時 None。"""
+    if not holdings:
+        return {"overall": {"short": "", "mid": "", "long": ""}, "stocks": []}
+
+    market_lines = [
+        f"{m['name']}: {m['value']} ({m['change_pct']:+.2f}%)"
+        for m in market.values()
+        if m.get("ok") and m.get("value") is not None and m.get("change_pct") is not None
+    ]
+    holding_lines = [
+        f"{h['code']} {h['name']}" + (f" (関連: {', '.join(h.get('keywords') or [])})" if h.get("keywords") else "")
+        for h in holdings
+    ]
+    news_lines = [f"- {a['title']}" for a in articles[:40]]
+    user = (
+        "【保有銘柄】\n" + "\n".join(holding_lines)
+        + "\n\n【市況】\n" + ("\n".join(market_lines) or "(取得失敗)")
+        + "\n\n【関連ニュース】\n" + ("\n".join(news_lines) or "なし")
+    )
+    for attempt in range(2):
+        try:
+            data = _extract_json(_call_gemini(IMPACT_SYSTEM, user))
+            data.setdefault("overall", {})
+            data.setdefault("stocks", [])
+            return data
+        except (json.JSONDecodeError, ValueError):
+            logger.warning("影響考察 JSON パース失敗 (attempt %s)", attempt + 1)
+        except Exception:
+            logger.exception("影響考察 Gemini 呼び出し失敗")
+            return None
+    return None
+
+
 def _fallback(articles: list[dict]) -> dict:
     """スコアリング不能時: 新しい順に5件をそのまま見出しにする。
 

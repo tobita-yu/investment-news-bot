@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, Response
 
 from app import calendar_loader, db, formatter, line_client, market_data, news_fetcher, scorer
 from app.config import get_settings
@@ -94,8 +94,49 @@ def deliver(edition: str, x_trigger_token: str | None = Header(default=None)) ->
     return {"edition": edition, "length": len(message)}
 
 
+def run_portfolio_impact(user_id: str) -> None:
+    """保有銘柄への影響考察を実行し、指定ユーザーに push する(重い処理・背景実行用)。"""
+    try:
+        holdings = db.list_holdings()
+        if not holdings:
+            line_client.push("保有銘柄が登録されていません。先に『保有追加』してください。", [user_id])
+            return
+        market = market_data.fetch_market_data()
+        articles = news_fetcher.fetch_news(holdings)
+        impact = scorer.analyze_portfolio_impact(holdings, market, articles)
+        if impact is None:
+            line_client.push("⚠️ 影響考察の生成に失敗しました(AI混雑の可能性)。少し待って再度お試しください。", [user_id])
+            return
+        line_client.push(formatter.format_portfolio_impact(impact), [user_id])
+    except Exception:
+        logger.exception("影響考察の実行に失敗")
+        line_client.push("⚠️ 影響考察の生成中にエラーが発生しました。", [user_id])
+
+
+def run_delivery_test(user_id: str) -> None:
+    """配信テスト(朝刊プレビュー)を実行し push する(重い処理・背景実行用)。"""
+    try:
+        msg = run_delivery("morning", push=False)
+        line_client.push(msg, [user_id])
+    except Exception as e:  # noqa: BLE001
+        logger.exception("配信テスト失敗")
+        line_client.push(f"配信テスト失敗: {e}", [user_id])
+
+
+# 重いコマンド(Gemini呼び出し等)→背景実行してpush。キーは正規化後の文字列。
+_HEAVY_COMMANDS = {
+    "配信テスト": (run_delivery_test, "📰 朝刊プレビューを作成中です…少々お待ちください。"),
+    "保有影響": (run_portfolio_impact, "📈 保有銘柄への影響を考察中です…少々お待ちください(30秒ほど)。"),
+    "保有銘柄への影響": (run_portfolio_impact, "📈 保有銘柄への影響を考察中です…少々お待ちください(30秒ほど)。"),
+}
+
+
 @app.post("/webhook")
-async def webhook(request: Request, x_line_signature: str | None = Header(default=None)) -> Response:
+async def webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_line_signature: str | None = Header(default=None),
+) -> Response:
     body = await request.body()
     if not line_client.verify_signature(body, x_line_signature or ""):
         raise HTTPException(status_code=403, detail="invalid signature")
@@ -108,17 +149,18 @@ async def webhook(request: Request, x_line_signature: str | None = Header(defaul
             continue
         text = event["message"]["text"].strip()
         reply_token = event.get("replyToken")
+        user_id = (event.get("source") or {}).get("userId")
 
-        if text == "配信テスト":
-            try:
-                msg = run_delivery("morning", push=False)
-                reply = msg
-            except Exception as e:  # noqa: BLE001
-                logger.exception("配信テスト失敗")
-                reply = f"配信テスト失敗: {e}"
-        else:
-            reply = line_client.handle_command(text)
+        heavy = _HEAVY_COMMANDS.get(text)
+        if heavy and user_id:
+            # 重い処理は背景実行(replyTokenの30秒制限を回避)。即時ackして結果はpush。
+            fn, ack = heavy
+            background_tasks.add_task(fn, user_id)
+            if reply_token:
+                line_client.reply(reply_token, ack)
+            continue
 
+        reply = line_client.handle_command(text)
         if reply and reply_token:
             line_client.reply(reply_token, reply)
 

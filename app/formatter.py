@@ -166,6 +166,44 @@ def format_message(
     return msg
 
 
+def format_portfolio_impact(impact: dict, now: datetime | None = None) -> str:
+    """保有銘柄への影響考察(短期/中期/長期)を整形する。"""
+    now = now or datetime.now(JST)
+    wd = _WEEKDAYS_JA[now.weekday()]
+    parts = [f"📈 保有銘柄への影響考察  {now.month}/{now.day}({wd})"]
+
+    ov = impact.get("overall") or {}
+    if any(ov.get(k) for k in ("short", "mid", "long")):
+        lines = ["■ ポートフォリオ全体"]
+        if ov.get("short"):
+            lines.append(f"【短期】{ov['short']}")
+        if ov.get("mid"):
+            lines.append(f"【中期】{ov['mid']}")
+        if ov.get("long"):
+            lines.append(f"【長期】{ov['long']}")
+        parts.append("\n".join(lines))
+
+    stocks = impact.get("stocks") or []
+    if stocks:
+        blocks = ["■ 個別銘柄"]
+        for s in stocks:
+            b = [f"● {s.get('name', '').strip()}"]
+            if s.get("short"):
+                b.append(f"　短期: {s['short']}")
+            if s.get("mid"):
+                b.append(f"　中期: {s['mid']}")
+            if s.get("long"):
+                b.append(f"　長期: {s['long']}")
+            blocks.append("\n".join(b))
+        parts.append("\n\n".join(blocks))
+
+    parts.append("※AIによる考察です。最終的な投資判断はご自身の責任で。")
+    msg = "\n\n".join(parts)
+    if len(msg) > MAX_LEN:
+        msg = msg[: MAX_LEN - 1] + "…"
+    return msg
+
+
 # ---------------------------------------------------------------------------
 # dry-run 用サンプル
 # ---------------------------------------------------------------------------

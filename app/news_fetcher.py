@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import logging
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
+
+# これより古い記事は鮮度低下とみなして除外する(週末・祝日を跨ぐため広めの4日)
+MAX_AGE_DAYS = 4
 
 # 固定フィード (ラベル, URL)
 # --- 一次情報(中央銀行・公的統計の公式発表。プロが起点に見る発表元) ---
@@ -80,16 +83,19 @@ def _parse_published(entry) -> datetime | None:
         return None
 
 
-def fetch_news(holdings: list[dict] | None = None) -> list[dict]:
+def fetch_news(holdings: list[dict] | None = None, max_age_days: int = MAX_AGE_DAYS) -> list[dict]:
     """全フィードを取得し、記事 dict のリストを返す。
 
     返す各記事: {"label", "title", "summary", "link", "published"}
-    タイトル正規化による feed 内重複排除のみここで行う(DB 重複排除は db.filter_unseen)。
+    - タイトル正規化による feed 内重複排除(DB 重複排除は db.filter_unseen)
+    - published が max_age_days より古い記事は除外し、鮮度を担保する
+      (Google News 検索フィードは古い記事も返すため。日付不明の記事は残す)
     """
     import feedparser
 
     holdings = holdings or []
     feeds = RSS_FEEDS + _holdings_feeds(holdings)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
 
     seen_titles: set[str] = set()
     out: list[dict] = []
@@ -105,6 +111,10 @@ def fetch_news(holdings: list[dict] | None = None) -> list[dict]:
             title = (getattr(entry, "title", "") or "").strip()
             if not title:
                 continue
+            published = _parse_published(entry)
+            # 古い記事は除外(日付不明は鮮度判定できないので残す)
+            if published is not None and published < cutoff:
+                continue
             norm = _normalize(title)
             if norm in seen_titles:
                 continue
@@ -115,7 +125,7 @@ def fetch_news(holdings: list[dict] | None = None) -> list[dict]:
                     "title": title,
                     "summary": (getattr(entry, "summary", "") or "").strip()[:300],
                     "link": getattr(entry, "link", ""),
-                    "published": _parse_published(entry),
+                    "published": published,
                 }
             )
     return out

@@ -1,0 +1,8 @@
+  [  1.2s] holdings 10
+  [  4.0s] market done
+  [ 23.1s] news 285
+  [ 23.7s] fresh 220
+  [ 23.7s] calendar
+  [130.0s] scored headlines=26 fallback=None
+  [130.0s] formatted 2388字
+OK total 130.0 s

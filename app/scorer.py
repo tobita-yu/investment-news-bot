@@ -231,6 +231,26 @@ def _attach_sources(headlines: list[dict], articles: list[dict]) -> None:
             h.setdefault("source_label", "")
 
 
+MAX_ARTICLES_TO_SCORE = 70  # Gemini に渡す記事の上限(多すぎると激重になるため)
+
+
+def _select_for_scoring(articles: list[dict]) -> list[dict]:
+    """スコアリング対象を絞る。保有銘柄・適時開示を優先し、残りを新着で埋める。"""
+    from datetime import datetime, timezone
+
+    oldest = datetime.min.replace(tzinfo=timezone.utc)
+
+    def recency(a: dict):
+        return a.get("published") or oldest
+
+    is_holding = lambda a: a.get("label", "").startswith(("保有:", "適時開示:"))
+    holding = sorted([a for a in articles if is_holding(a)], key=recency, reverse=True)
+    other = sorted([a for a in articles if not is_holding(a)], key=recency, reverse=True)
+    keep_holding = holding[:40]
+    selected = keep_holding + other[: MAX_ARTICLES_TO_SCORE - len(keep_holding)]
+    return selected[:MAX_ARTICLES_TO_SCORE]
+
+
 def score_articles(
     articles: list[dict],
     market: dict[str, dict],
@@ -244,6 +264,8 @@ def score_articles(
     if not articles:
         return {"headlines": [], "portfolio_notes": [], "ai_comment": ""}
 
+    # 渡す記事を上限化(高速化・トークン節約)。以降は同じリストで source 紐付けする。
+    articles = _select_for_scoring(articles)
     user = _build_user_prompt(articles, market, holdings, events)
 
     for attempt in range(2):

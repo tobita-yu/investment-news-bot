@@ -81,24 +81,30 @@ def fetch_tdnet(holdings: list[dict], max_age_days: int = TDNET_MAX_AGE_DAYS) ->
     決算短信・自己株式・配当・業績修正など公式開示を銘柄ごとに取得する。
     """
     import httpx
+    from concurrent.futures import ThreadPoolExecutor
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
     out: list[dict] = []
-    with httpx.Client(timeout=20) as client:
-        for h in holdings:
-            code = h.get("code", "")
-            if not code:
-                continue
-            try:
-                r = client.get(
-                    f"https://webapi.yanoshin.jp/webapi/tdnet/list/{code}.json",
-                    params={"limit": 8},
-                )
-                items = r.json().get("items", [])
-            except Exception:
-                logger.warning("TDnet 取得失敗 %s", code)
-                continue
-            for it in items:
+
+    def _fetch_code(h):
+        code = h.get("code", "")
+        if not code:
+            return h, []
+        try:
+            r = httpx.get(
+                f"https://webapi.yanoshin.jp/webapi/tdnet/list/{code}.json",
+                params={"limit": 8}, timeout=20,
+            )
+            return h, r.json().get("items", [])
+        except Exception:
+            logger.warning("TDnet 取得失敗 %s", code)
+            return h, []
+
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        fetched = list(ex.map(_fetch_code, holdings))
+
+    for h, items in fetched:
+        for it in items:
                 t = it.get("Tdnet", {})
                 title = (t.get("title") or "").strip()
                 if not title:
@@ -154,21 +160,30 @@ def fetch_news(holdings: list[dict] | None = None, max_age_days: int = MAX_AGE_D
       (Google News 検索フィードは古い記事も返すため。日付不明の記事は残す)
     """
     import feedparser
+    from concurrent.futures import ThreadPoolExecutor
 
     holdings = holdings or []
     feeds = RSS_FEEDS + _holdings_feeds(holdings)
     cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
 
+    def _fetch(label_url):
+        label, url = label_url
+        try:
+            return label, feedparser.parse(url)
+        except Exception:
+            logger.warning("RSS 取得失敗 %s", label)
+            return label, None
+
+    # フィードを並行取得して高速化(I/O 待ちが大半のためスレッドで十分)
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        results = list(ex.map(_fetch, feeds))
+
     seen_titles: set[str] = set()
     out: list[dict] = []
 
-    for label, url in feeds:
-        try:
-            parsed = feedparser.parse(url)
-        except Exception:
-            logger.warning("RSS 取得失敗 %s", label)
+    for label, parsed in results:
+        if parsed is None:
             continue
-
         for entry in parsed.entries[:MAX_ITEMS_PER_FEED]:
             title = (getattr(entry, "title", "") or "").strip()
             if not title:
